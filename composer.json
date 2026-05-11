@@ -1,0 +1,9 @@
+{
+    "name": "atwx/silverstripe-isr",
+    "description": "Silverstripe ISR module",
+    "type": "silverstripe-module",
+    "license": "MIT",
+    "require": {
+        "silverstripe/framework": "^5"
+    }
+}
