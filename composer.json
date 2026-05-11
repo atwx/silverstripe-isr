@@ -1,7 +1,7 @@
 {
     "name": "atwx/silverstripe-isr",
     "description": "ISR support module for Silverstripe CMS",
-    "type": "silverstripe-module",
+    "type": "silverstripe-vendormodule",
     "license": "MIT",
     "require": {
         "silverstripe/framework": "^6.0"
