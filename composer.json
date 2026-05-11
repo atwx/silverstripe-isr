@@ -4,6 +4,6 @@
     "type": "silverstripe-module",
     "license": "MIT",
     "require": {
-        "silverstripe/framework": "^5.0"
+        "silverstripe/framework": "^6.0"
     }
 }
