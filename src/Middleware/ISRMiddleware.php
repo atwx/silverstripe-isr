@@ -140,11 +140,14 @@ class ISRMiddleware implements HTTPMiddleware
         if (!in_array($response->getStatusCode(), array_map('intval', $codes), true)) {
             return false;
         }
-        $cacheControl = strtolower((string)$response->getHeader('Cache-Control'));
-        if ($cacheControl !== '' && (str_contains($cacheControl, 'no-store') || str_contains($cacheControl, 'private'))) {
+        // Cache-Control no-store/private is a hint for downstream HTTP caches/browsers.
+        // ISR is a server-side cache layer the operator opted into, so we ignore it here.
+        // Set-Cookie however MUST bypass: caching would leak the cookie across users.
+        if ($response->getHeader('Set-Cookie')) {
             return false;
         }
-        if ($response->getHeader('Set-Cookie')) {
+        if ($response->getHeader('X-ISR-Bypass')) {
+            $response->removeHeader('X-ISR-Bypass');
             return false;
         }
         $body = (string)$response->getBody();

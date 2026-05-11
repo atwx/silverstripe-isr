@@ -60,7 +60,7 @@ class ISRPageExtension extends Extension
             return;
         }
         if ((bool)$page->DisableISRCache || (int)$page->CacheTTL === -1) {
-            $response->addHeader('Cache-Control', 'no-store');
+            $response->addHeader('X-ISR-Bypass', '1');
             return;
         }
         $collector = ISRMiddleware::tagCollector();
