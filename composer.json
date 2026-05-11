@@ -8,7 +8,7 @@
         "silverstripe/framework": "^6",
         "silverstripe/cms": "^6",
         "symfony/cache": "^7",
-        "symbiote/silverstripe-queuedjobs": "^5"
+        "symbiote/silverstripe-queuedjobs": "^6"
     },
     "require-dev": {
         "phpunit/phpunit": "^11",
