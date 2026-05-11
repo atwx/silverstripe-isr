@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit
+    bootstrap="vendor/silverstripe/framework/tests/bootstrap.php"
+    colors="true"
+    failOnRisky="false"
+    failOnWarning="false"
+    cacheDirectory=".phpunit.cache"
+>
+    <testsuites>
+        <testsuite name="isr">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory suffix=".php">src</directory>
+        </include>
+    </source>
+</phpunit>

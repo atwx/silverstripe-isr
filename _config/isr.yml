@@ -1,0 +1,39 @@
+---
+Name: isr
+After:
+  - '#corecache'
+---
+SilverStripe\Core\Injector\Injector:
+  Atwx\ISR\Cache\ISRCache:
+    constructor:
+      backend: 'filesystem'
+  Atwx\ISR\Strategy\CacheKeyResolver:
+    class: Atwx\ISR\Strategy\DefaultCacheKeyResolver
+
+Atwx\ISR\Strategy\DefaultCacheKeyResolver:
+  whitelist_query_params: []
+
+Atwx\ISR\Middleware\ISRMiddleware:
+  default_ttl: 300
+  stale_grace: 3600
+  hard_max_age: 86400
+  cacheable_methods:
+    - GET
+    - HEAD
+  cacheable_status_codes:
+    - 200
+    - 404
+  bypass_cookies:
+    - PHPSESSID
+    - login_session
+    - bypass-cache
+  bypass_query_params:
+    - flush
+    - stage
+  excluded_paths:
+    - /admin
+    - /Security
+    - /dev
+    - /api
+  revalidation_mode: auto
+  lock_ttl: 30
