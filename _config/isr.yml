@@ -9,6 +9,10 @@ SilverStripe\Core\Injector\Injector:
       backend: 'filesystem'
   Atwx\ISR\Strategy\CacheKeyResolver:
     class: Atwx\ISR\Strategy\DefaultCacheKeyResolver
+  Atwx\ISR\Middleware\ISRMiddleware:
+    constructor:
+      cache: '%$Atwx\ISR\Cache\ISRCache'
+      keyResolver: '%$Atwx\ISR\Strategy\CacheKeyResolver'
 
 Atwx\ISR\Strategy\DefaultCacheKeyResolver:
   whitelist_query_params: []
