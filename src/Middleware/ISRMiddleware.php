@@ -79,17 +79,20 @@ class ISRMiddleware implements HTTPMiddleware
 
         $key = $this->keyResolver->keyFor($request);
         $now = time();
-        $entry = $this->cache->get($key);
+        $isInternal = $request->getHeader('X-ISR-Internal') === '1';
 
-        if ($entry !== null && !$entry->isExpired((int)static::config()->get('hard_max_age'), $now)) {
-            if (!$entry->isStale($now)) {
-                return $this->respondFromCache($entry, 'HIT', $now);
-            }
+        if (!$isInternal) {
+            $entry = $this->cache->get($key);
+            if ($entry !== null && !$entry->isExpired((int)static::config()->get('hard_max_age'), $now)) {
+                if (!$entry->isStale($now)) {
+                    return $this->respondFromCache($entry, 'HIT', $now);
+                }
 
-            $graceLimit = $entry->createdAt + $entry->ttl + (int)static::config()->get('stale_grace');
-            if ($now <= $graceLimit) {
-                $this->scheduleRevalidate($request, $key);
-                return $this->respondFromCache($entry, 'STALE', $now);
+                $graceLimit = $entry->createdAt + $entry->ttl + (int)static::config()->get('stale_grace');
+                if ($now <= $graceLimit) {
+                    $this->scheduleRevalidate($request, $key);
+                    return $this->respondFromCache($entry, 'STALE', $now);
+                }
             }
         }
 
@@ -97,7 +100,7 @@ class ISRMiddleware implements HTTPMiddleware
         $response = $delegate($request);
         if ($response instanceof HTTPResponse) {
             $this->storeIfCacheable($request, $response, $key);
-            $response->addHeader('X-ISR-Cache', 'MISS');
+            $response->addHeader('X-ISR-Cache', $isInternal ? 'REVALIDATE' : 'MISS');
         }
         return $response;
     }
@@ -226,24 +229,24 @@ class ISRMiddleware implements HTTPMiddleware
             return;
         }
         $mode = (string)static::config()->get('revalidation_mode');
-        $url = (string)$request->getURL(true);
+        $absoluteUrl = Director::absoluteURL((string)$request->getURL(true));
 
         if ($mode === 'queue' || (!$this->fpmAvailable() && $mode !== 'shutdown')) {
-            $this->enqueueJob($url, $key);
+            $this->enqueueJob($absoluteUrl, $key);
             return;
         }
 
         if ($this->fpmAvailable()) {
-            register_shutdown_function(function () use ($url, $key) {
+            register_shutdown_function(function () use ($absoluteUrl, $key) {
                 if (function_exists('fastcgi_finish_request')) {
                     @fastcgi_finish_request();
                 }
-                $this->revalidateNow($url, $key);
+                $this->revalidateNow($absoluteUrl, $key);
             });
             return;
         }
 
-        $this->enqueueJob($url, $key);
+        $this->enqueueJob($absoluteUrl, $key);
     }
 
     private function fpmAvailable(): bool
@@ -262,19 +265,32 @@ class ISRMiddleware implements HTTPMiddleware
             ->queueJob($job);
     }
 
+    /**
+     * Fire an internal HTTP request via cURL so the full request pipeline (incl. SessionMiddleware
+     * and our own ISRMiddleware-store path) handles the response. The internal request is marked
+     * with X-ISR-Internal so it skips the cache lookup but still writes the rendered response back.
+     */
     private function revalidateNow(string $url, string $key): void
     {
         try {
-            $path = parse_url($url, PHP_URL_PATH) ?? '/';
-            $query = parse_url($url, PHP_URL_QUERY);
-            $target = $path . ($query ? '?' . $query : '');
-            self::resetTagCollector();
-            $session = new \SilverStripe\Control\Session([]);
-            $response = Director::test($target, [], $session);
-            if ($response instanceof HTTPResponse && $this->isCacheableResponse($response)) {
-                $req = new HTTPRequest('GET', $target);
-                $this->storeIfCacheable($req, $response, $key);
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_FOLLOWLOCATION => false,
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_CONNECTTIMEOUT => 5,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => 0,
+                CURLOPT_HTTPHEADER => [
+                    'X-ISR-Internal: 1',
+                    'User-Agent: ISR-Revalidate/1.0',
+                ],
+            ]);
+            $ok = @curl_exec($ch);
+            if ($ok === false) {
+                error_log('[ISR] Revalidate curl error: ' . curl_error($ch));
             }
+            curl_close($ch);
         } catch (\Throwable $e) {
             error_log('[ISR] Revalidate failed: ' . $e->getMessage());
         } finally {

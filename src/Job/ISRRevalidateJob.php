@@ -42,28 +42,24 @@ class ISRRevalidateJob extends AbstractQueuedJob
     {
         $cache = Injector::inst()->get(ISRCache::class);
         try {
-            $path = parse_url((string)$this->url, PHP_URL_PATH) ?? '/';
-            $query = parse_url((string)$this->url, PHP_URL_QUERY);
-            $target = $path . ($query ? '?' . $query : '');
-            ISRMiddleware::resetTagCollector();
-            $response = Director::test($target);
-            if (!$response instanceof HTTPResponse) {
-                return;
+            $ch = curl_init((string)$this->url);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_FOLLOWLOCATION => false,
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_CONNECTTIMEOUT => 5,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => 0,
+                CURLOPT_HTTPHEADER => [
+                    'X-ISR-Internal: 1',
+                    'User-Agent: ISR-Revalidate/1.0',
+                ],
+            ]);
+            $ok = @curl_exec($ch);
+            if ($ok === false) {
+                error_log('[ISR] Job revalidate curl error: ' . curl_error($ch));
             }
-            $ttl = (int)($response->getHeader('X-ISR-TTL') ?: ISRMiddleware::config()->get('default_ttl'));
-            if ($response->getHeader('X-ISR-TTL')) {
-                $response->removeHeader('X-ISR-TTL');
-            }
-            $tags = ISRMiddleware::tagCollector()->all();
-            $entry = new ISRCacheEntry(
-                body: (string)$response->getBody(),
-                headers: $this->collectHeaders($response),
-                statusCode: (int)$response->getStatusCode(),
-                createdAt: time(),
-                ttl: $ttl,
-                tags: $tags,
-            );
-            $cache->set((string)$this->cacheKey, $entry, $tags);
+            curl_close($ch);
         } catch (\Throwable $e) {
             error_log('[ISR] Job revalidate failed: ' . $e->getMessage());
         } finally {
