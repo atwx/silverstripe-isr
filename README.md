@@ -2,11 +2,11 @@
 
 Incremental Static Regeneration (ISR) caching for SilverStripe CMS 6.
 
-Serves cached page output in a few milliseconds without booting SilverStripe, regenerates stale entries in the background, and invalidates cache entries on publish via tag-based dependencies.
+Short-circuits the request pipeline at the HTTPMiddleware layer: cached responses skip the controller, template, and ORM work entirely. SilverStripe itself is still booted (the middleware runs as part of `Director.Middlewares`), but on a cache hit the response is returned before any page rendering happens. Stale entries are regenerated in the background; tag-based invalidation flushes entries on publish.
 
 ## Features
 
-- HTTP-middleware based — full responses are cached and replayed without touching SilverStripe internals on a cache hit.
+- HTTP-middleware based — on a cache hit the response is replayed without invoking the controller, template, or ORM. The SilverStripe kernel still boots since the middleware is registered on `Director`.
 - Stale-while-revalidate semantics: a stale entry is served immediately while a background refresh runs.
 - Background revalidation via internal cURL request (works on FPM, mod_php, and CLI).
 - Tag-based invalidation through Symfony `TagAwareAdapter` (filesystem or Redis backend).
