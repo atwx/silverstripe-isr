@@ -44,6 +44,17 @@ class ISRMiddleware implements HTTPMiddleware
     /** @config */
     private static array $bypass_cookies = ['PHPSESSID', 'login_session', 'bypass-cache'];
 
+    /**
+     * Set-Cookie headers whose cookie *names* are safe to drop from a cacheable response.
+     * If a response only carries Set-Cookies whose names appear here, the response is
+     * cached but the Set-Cookie headers are stripped before storage. Used for locale-
+     * detection cookies such as Fluent's FluentLocale, which Fluent re-sets on every
+     * request anyway.
+     *
+     * @config
+     */
+    private static array $strippable_set_cookies = ['FluentLocale', 'FluentLocale_CMS'];
+
     /** @config */
     private static array $bypass_query_params = ['flush', 'stage'];
 
@@ -173,8 +184,19 @@ class ISRMiddleware implements HTTPMiddleware
         // Cache-Control no-store/private is a hint for downstream HTTP caches/browsers.
         // ISR is a server-side cache layer the operator opted into, so we ignore it here.
         // Set-Cookie however MUST bypass: caching would leak the cookie across users.
-        if ($response->getHeader('Set-Cookie')) {
-            return false;
+        // Exception: cookie names listed in strippable_set_cookies (e.g. FluentLocale)
+        // are dropped from the cached response — collectHeaders() does the stripping.
+        $setCookie = $response->getHeader('Set-Cookie');
+        if ($setCookie !== null && $setCookie !== '') {
+            $strippable = array_map(
+                'strtolower',
+                (array)static::config()->get('strippable_set_cookies'),
+            );
+            foreach ($this->parseSetCookieNames($setCookie) as $name) {
+                if (!in_array(strtolower($name), $strippable, true)) {
+                    return false;
+                }
+            }
         }
         if ($response->getHeader('X-ISR-Bypass')) {
             $response->removeHeader('X-ISR-Bypass');
@@ -222,6 +244,26 @@ class ISRMiddleware implements HTTPMiddleware
         } else {
             $this->cache->set($baseKey, $entry, $tags);
         }
+    }
+
+    /**
+     * Extract cookie names from one or more Set-Cookie header values.
+     * Returns an array of names (no values, no attributes). Whitespace around the name is trimmed.
+     *
+     * @return string[]
+     */
+    private function parseSetCookieNames(string|array $header): array
+    {
+        $lines = is_array($header) ? $header : [$header];
+        $names = [];
+        foreach ($lines as $line) {
+            $line = (string)$line;
+            $eq = strpos($line, '=');
+            if ($eq !== false) {
+                $names[] = trim(substr($line, 0, $eq));
+            }
+        }
+        return $names;
     }
 
     private function resolveTTL(HTTPRequest $request, HTTPResponse $response): int

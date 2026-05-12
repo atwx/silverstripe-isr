@@ -42,6 +42,9 @@ Atwx\ISR\Middleware\ISRMiddleware:
     - PHPSESSID
     - login_session
     - bypass-cache
+  strippable_set_cookies:
+    - FluentLocale
+    - FluentLocale_CMS
   bypass_query_params:
     - flush
     - stage
