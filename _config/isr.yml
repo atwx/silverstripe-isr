@@ -9,10 +9,17 @@ SilverStripe\Core\Injector\Injector:
       backend: 'filesystem'
   Atwx\ISR\Strategy\CacheKeyResolver:
     class: Atwx\ISR\Strategy\DefaultCacheKeyResolver
+  Psr\Log\LoggerInterface.isr:
+    type: singleton
+    class: Monolog\Logger
+    constructor: ['isr']
+    calls:
+      pushErrorLogHandler: [ pushHandler, [ '%$Monolog\Handler\ErrorLogHandler' ] ]
   Atwx\ISR\Middleware\ISRMiddleware:
     constructor:
       cache: '%$Atwx\ISR\Cache\ISRCache'
       keyResolver: '%$Atwx\ISR\Strategy\CacheKeyResolver'
+      logger: '%$Psr\Log\LoggerInterface.isr'
 
 Atwx\ISR\Strategy\DefaultCacheKeyResolver:
   whitelist_query_params: []

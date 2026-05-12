@@ -9,6 +9,8 @@ use Atwx\ISR\Cache\ISRCacheEntry;
 use Atwx\ISR\Job\ISRRevalidateJob;
 use Atwx\ISR\Strategy\CacheKeyResolver;
 use Atwx\ISR\Strategy\TagCollector;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use SilverStripe\Control\Director;
 use SilverStripe\Control\HTTPRequest;
 use SilverStripe\Control\HTTPResponse;
@@ -52,10 +54,14 @@ class ISRMiddleware implements HTTPMiddleware
 
     private static ?TagCollector $collector = null;
 
+    private readonly LoggerInterface $logger;
+
     public function __construct(
         private readonly ISRCache $cache,
         private readonly CacheKeyResolver $keyResolver,
+        ?LoggerInterface $logger = null,
     ) {
+        $this->logger = $logger ?? new NullLogger();
     }
 
     public static function tagCollector(): TagCollector
@@ -155,7 +161,7 @@ class ISRMiddleware implements HTTPMiddleware
         }
         $body = (string)$response->getBody();
         if (str_contains($body, 'name="SecurityID"')) {
-            error_log('[ISR] Skipping cache: response contains SecurityID form token');
+            $this->logger->info('Skipping cache: response contains SecurityID form token');
             return false;
         }
         return true;
@@ -284,11 +290,14 @@ class ISRMiddleware implements HTTPMiddleware
             ]);
             $ok = @curl_exec($ch);
             if ($ok === false) {
-                error_log('[ISR] Revalidate curl error: ' . curl_error($ch));
+                $this->logger->warning('Revalidation cURL error', [
+                    'error' => curl_error($ch),
+                    'url' => $url,
+                ]);
             }
             curl_close($ch);
         } catch (\Throwable $e) {
-            error_log('[ISR] Revalidate failed: ' . $e->getMessage());
+            $this->logger->warning('Revalidation failed', ['exception' => $e]);
         } finally {
             $this->cache->unlock($key);
         }

@@ -7,6 +7,7 @@ namespace Atwx\ISR\Job;
 use Atwx\ISR\Cache\ISRCache;
 use Atwx\ISR\Cache\ISRCacheEntry;
 use Atwx\ISR\Middleware\ISRMiddleware;
+use Psr\Log\LoggerInterface;
 use SilverStripe\Control\Director;
 use SilverStripe\Control\HTTPResponse;
 use SilverStripe\Core\Injector\Injector;
@@ -41,6 +42,7 @@ class ISRRevalidateJob extends AbstractQueuedJob
     public function process(): void
     {
         $cache = Injector::inst()->get(ISRCache::class);
+        $logger = Injector::inst()->get(LoggerInterface::class . '.isr');
         try {
             $ch = curl_init((string)$this->url);
             curl_setopt_array($ch, [
@@ -57,11 +59,14 @@ class ISRRevalidateJob extends AbstractQueuedJob
             ]);
             $ok = @curl_exec($ch);
             if ($ok === false) {
-                error_log('[ISR] Job revalidate curl error: ' . curl_error($ch));
+                $logger->warning('Job revalidation cURL error', [
+                    'error' => curl_error($ch),
+                    'url' => (string)$this->url,
+                ]);
             }
             curl_close($ch);
         } catch (\Throwable $e) {
-            error_log('[ISR] Job revalidate failed: ' . $e->getMessage());
+            $logger->warning('Job revalidation failed', ['exception' => $e]);
         } finally {
             $cache->unlock((string)$this->cacheKey);
             $this->currentStep = 1;
