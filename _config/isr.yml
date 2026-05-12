@@ -15,11 +15,15 @@ SilverStripe\Core\Injector\Injector:
     constructor: ['isr']
     calls:
       pushErrorLogHandler: [ pushHandler, [ '%$Monolog\Handler\ErrorLogHandler' ] ]
+  Atwx\ISR\Cache\ISRCounters:
+    constructor:
+      backend: '%$Atwx\ISR\Cache\ISRCache'
   Atwx\ISR\Middleware\ISRMiddleware:
     constructor:
       cache: '%$Atwx\ISR\Cache\ISRCache'
       keyResolver: '%$Atwx\ISR\Strategy\CacheKeyResolver'
       logger: '%$Psr\Log\LoggerInterface.isr'
+      counters: '%$Atwx\ISR\Cache\ISRCounters'
 
 Atwx\ISR\Strategy\DefaultCacheKeyResolver:
   whitelist_query_params: []

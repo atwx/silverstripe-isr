@@ -6,6 +6,7 @@ namespace Atwx\ISR\Middleware;
 
 use Atwx\ISR\Cache\ISRCache;
 use Atwx\ISR\Cache\ISRCacheEntry;
+use Atwx\ISR\Cache\ISRCounters;
 use Atwx\ISR\Job\ISRRevalidateJob;
 use Atwx\ISR\Strategy\CacheKeyResolver;
 use Atwx\ISR\Strategy\TagCollector;
@@ -55,13 +56,16 @@ class ISRMiddleware implements HTTPMiddleware
     private static ?TagCollector $collector = null;
 
     private readonly LoggerInterface $logger;
+    private readonly ?ISRCounters $counters;
 
     public function __construct(
         private readonly ISRCache $cache,
         private readonly CacheKeyResolver $keyResolver,
         ?LoggerInterface $logger = null,
+        ?ISRCounters $counters = null,
     ) {
         $this->logger = $logger ?? new NullLogger();
+        $this->counters = $counters;
     }
 
     public static function tagCollector(): TagCollector
@@ -91,12 +95,14 @@ class ISRMiddleware implements HTTPMiddleware
             $entry = $this->cache->get($key);
             if ($entry !== null && !$entry->isExpired((int)static::config()->get('hard_max_age'), $now)) {
                 if (!$entry->isStale($now)) {
+                    $this->counters?->increment('HIT');
                     return $this->respondFromCache($entry, 'HIT', $now);
                 }
 
                 $graceLimit = $entry->createdAt + $entry->ttl + (int)static::config()->get('stale_grace');
                 if ($now <= $graceLimit) {
                     $this->scheduleRevalidate($request, $key);
+                    $this->counters?->increment('STALE');
                     return $this->respondFromCache($entry, 'STALE', $now);
                 }
             }
@@ -106,7 +112,9 @@ class ISRMiddleware implements HTTPMiddleware
         $response = $delegate($request);
         if ($response instanceof HTTPResponse) {
             $this->storeIfCacheable($request, $response, $key);
-            $response->addHeader('X-ISR-Cache', $isInternal ? 'REVALIDATE' : 'MISS');
+            $state = $isInternal ? 'REVALIDATE' : 'MISS';
+            $response->addHeader('X-ISR-Cache', $state);
+            $this->counters?->increment($state);
         }
         return $response;
     }
