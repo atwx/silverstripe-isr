@@ -17,7 +17,7 @@ class ISRDataObjectExtensionTest extends SapphireTest
 {
     protected $usesDatabase = true;
 
-    protected static array $extra_dataobjects = [
+    protected static $extra_dataobjects = [
         TestNewsItem::class,
     ];
 
