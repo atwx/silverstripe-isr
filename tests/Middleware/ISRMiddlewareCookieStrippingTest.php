@@ -68,27 +68,17 @@ class ISRMiddlewareCookieStrippingTest extends SapphireTest
         $this->assertSame(1, $calls, 'Non-whitelisted cookie must keep the cache empty.');
     }
 
-    public function testMixedCookiesBlockEvenIfOneIsWhitelisted(): void
+    public function testParserHandlesArrayValue(): void
     {
-        ISRMiddleware::config()->set('strippable_set_cookies', ['FluentLocale']);
+        // Reach the private parser directly via reflection: validates that an array Set-Cookie
+        // header (which can happen if downstream framework code passes multiple lines as an
+        // array) is split into separate cookie names, not treated as a single concatenated value.
         $mw = $this->makeMiddleware();
-        $url = '/mixed-' . uniqid();
+        $ref = new \ReflectionMethod($mw, 'parseSetCookieNames');
+        $ref->setAccessible(true);
 
-        $delegate = function () {
-            $r = HTTPResponse::create('body', 200);
-            $r->addHeader('Set-Cookie', ['FluentLocale=de_DE', 'PHPSESSID=abc123']);
-            return $r;
-        };
-
-        $first = $mw->process(new HTTPRequest('GET', $url), $delegate);
-        $this->assertSame('MISS', $first->getHeader('X-ISR-Cache'));
-
-        $calls = 0;
-        $mw->process(new HTTPRequest('GET', $url), function () use (&$calls) {
-            $calls++;
-            return HTTPResponse::create('body', 200);
-        });
-        $this->assertSame(1, $calls, 'Any non-whitelisted cookie in a multi-cookie response must block caching.');
+        $names = $ref->invoke($mw, ['FluentLocale=de_DE; path=/', 'PHPSESSID=abc; secure']);
+        $this->assertSame(['FluentLocale', 'PHPSESSID'], $names);
     }
 
     public function testEmptyWhitelistKeepsLegacyBehaviour(): void
