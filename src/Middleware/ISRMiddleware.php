@@ -8,6 +8,7 @@ use Atwx\ISR\Cache\ISRCache;
 use Atwx\ISR\Cache\ISRCacheEntry;
 use Atwx\ISR\Cache\ISRCounters;
 use Atwx\ISR\Cache\VaryMarker;
+use Atwx\ISR\Http\InternalHttpClient;
 use Atwx\ISR\Job\ISRRevalidateJob;
 use Atwx\ISR\Strategy\CacheKeyResolver;
 use Atwx\ISR\Strategy\TagCollector;
@@ -300,34 +301,15 @@ class ISRMiddleware implements HTTPMiddleware
     }
 
     /**
-     * Fire an internal HTTP request via cURL so the full request pipeline (incl. SessionMiddleware
-     * and our own ISRMiddleware-store path) handles the response. The internal request is marked
-     * with X-ISR-Internal so it skips the cache lookup but still writes the rendered response back.
+     * Fire an internal HTTP request so the full request pipeline (incl. SessionMiddleware
+     * and our own ISRMiddleware-store path) handles the response. The internal request is
+     * marked with X-ISR-Internal so it skips the cache lookup but still writes the rendered
+     * response back.
      */
     private function revalidateNow(string $url, string $key): void
     {
         try {
-            $ch = curl_init($url);
-            curl_setopt_array($ch, [
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_FOLLOWLOCATION => false,
-                CURLOPT_TIMEOUT => 30,
-                CURLOPT_CONNECTTIMEOUT => 5,
-                CURLOPT_SSL_VERIFYPEER => false,
-                CURLOPT_SSL_VERIFYHOST => 0,
-                CURLOPT_HTTPHEADER => [
-                    'X-ISR-Internal: 1',
-                    'User-Agent: ISR-Revalidate/1.0',
-                ],
-            ]);
-            $ok = @curl_exec($ch);
-            if ($ok === false) {
-                $this->logger->warning('Revalidation cURL error', [
-                    'error' => curl_error($ch),
-                    'url' => $url,
-                ]);
-            }
-            curl_close($ch);
+            InternalHttpClient::fetch($url, $this->logger);
         } catch (\Throwable $e) {
             $this->logger->warning('Revalidation failed', ['exception' => $e]);
         } finally {

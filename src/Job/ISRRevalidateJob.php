@@ -5,11 +5,8 @@ declare(strict_types=1);
 namespace Atwx\ISR\Job;
 
 use Atwx\ISR\Cache\ISRCache;
-use Atwx\ISR\Cache\ISRCacheEntry;
-use Atwx\ISR\Middleware\ISRMiddleware;
+use Atwx\ISR\Http\InternalHttpClient;
 use Psr\Log\LoggerInterface;
-use SilverStripe\Control\Director;
-use SilverStripe\Control\HTTPResponse;
 use SilverStripe\Core\Injector\Injector;
 use Symbiote\QueuedJobs\Services\AbstractQueuedJob;
 use Symbiote\QueuedJobs\Services\QueuedJob;
@@ -44,27 +41,7 @@ class ISRRevalidateJob extends AbstractQueuedJob
         $cache = Injector::inst()->get(ISRCache::class);
         $logger = Injector::inst()->get(LoggerInterface::class . '.isr');
         try {
-            $ch = curl_init((string)$this->url);
-            curl_setopt_array($ch, [
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_FOLLOWLOCATION => false,
-                CURLOPT_TIMEOUT => 30,
-                CURLOPT_CONNECTTIMEOUT => 5,
-                CURLOPT_SSL_VERIFYPEER => false,
-                CURLOPT_SSL_VERIFYHOST => 0,
-                CURLOPT_HTTPHEADER => [
-                    'X-ISR-Internal: 1',
-                    'User-Agent: ISR-Revalidate/1.0',
-                ],
-            ]);
-            $ok = @curl_exec($ch);
-            if ($ok === false) {
-                $logger->warning('Job revalidation cURL error', [
-                    'error' => curl_error($ch),
-                    'url' => (string)$this->url,
-                ]);
-            }
-            curl_close($ch);
+            InternalHttpClient::fetch((string)$this->url, $logger);
         } catch (\Throwable $e) {
             $logger->warning('Job revalidation failed', ['exception' => $e]);
         } finally {
@@ -72,17 +49,5 @@ class ISRRevalidateJob extends AbstractQueuedJob
             $this->currentStep = 1;
             $this->isComplete = true;
         }
-    }
-
-    private function collectHeaders(HTTPResponse $response): array
-    {
-        $headers = [];
-        foreach ($response->getHeaders() as $name => $value) {
-            if (in_array(strtolower((string)$name), ['set-cookie', 'x-isr-cache', 'x-isr-age'], true)) {
-                continue;
-            }
-            $headers[(string)$name] = $value;
-        }
-        return $headers;
     }
 }
