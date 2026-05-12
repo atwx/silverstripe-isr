@@ -269,7 +269,8 @@ class ISRMiddleware implements HTTPMiddleware
             $query = parse_url($url, PHP_URL_QUERY);
             $target = $path . ($query ? '?' . $query : '');
             self::resetTagCollector();
-            $response = Director::test($target);
+            $session = new \SilverStripe\Control\Session([]);
+            $response = Director::test($target, [], $session);
             if ($response instanceof HTTPResponse && $this->isCacheableResponse($response)) {
                 $req = new HTTPRequest('GET', $target);
                 $this->storeIfCacheable($req, $response, $key);
