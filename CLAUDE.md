@@ -78,6 +78,24 @@ ddev exec vendor/bin/sake tasks:isr-stats
 - ✅ DataObject tag mapper (`ISRDataObjectExtension`)
 - ✅ Hit/Miss/Stale/Revalidate counters in `ISRStatsTask`
 
+## Fluent integration
+
+Two things projects need:
+
+1. `app/_config/isr.yml` must declare `After: ['#fluentrouting']`. Without it,
+   Fluent's `routing.yml` overrides `Director.Middlewares` (it sets the
+   property as a map) and ISR silently drops out of the chain — symptom is
+   `X-ISR-Cache` headers disappearing entirely.
+2. `strippable_set_cookies` config lists cookie names that may be dropped
+   from a cacheable response (default `FluentLocale, FluentLocale_CMS`).
+   Fluent in SS6 mostly bypasses the `HTTPResponse` Set-Cookie path via PHP's
+   native `setcookie()`, so this rarely fires — but it's defensive coverage
+   for projects that route cookies through the response object.
+
+`DefaultCacheKeyResolver::resolveLocale()` reads `FluentState::singleton()->getLocale()`
+on every request and folds it into the key, so en/de variants always land
+under different cache entries — no Vary handling needed for the locale axis.
+
 ## Possible v2 directions
 
 - Per-route counter breakdown (currently flat per state).

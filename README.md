@@ -124,6 +124,60 @@ For one-off custom tags without an extension:
     ->invalidateTag('news-list');
 ```
 
+## Fluent integration
+
+ISR ships with first-class support for [tractorcow/silverstripe-fluent](https://github.com/tractorcow-farm/silverstripe-fluent).
+
+**Two things you need to configure in your project:**
+
+1. **Middleware ordering.** Fluent's `routing.yml` overwrites the
+   `Director.Middlewares` property, so a plain `app/_config/isr.yml` without an
+   `After: ['#fluentrouting']` directive will drop `ISRMiddleware` from the
+   chain entirely. Always include both anchors:
+
+   ```yaml
+   ---
+   Name: app-isr
+   After:
+     - '#isr'
+     - '#fluentrouting'
+   ---
+   SilverStripe\Core\Injector\Injector:
+     SilverStripe\Control\Director:
+       properties:
+         Middlewares:
+           ISRMiddleware: '%$Atwx\ISR\Middleware\ISRMiddleware'
+   ```
+
+   With the correct order, Fluent's `InitStateMiddleware` and
+   `DetectLocaleMiddleware` run first → `FluentState` knows the locale →
+   `DefaultCacheKeyResolver` folds that locale into the cache key
+   (`isr_v1_{locale}_{hash}`). en and de variants of the same URL land under
+   different keys automatically.
+
+2. **The `FluentLocale` cookie.** Fluent's `DetectLocaleMiddleware` calls
+   `Cookie::set()` on every request, which in SilverStripe 6 writes through
+   PHP's native `setcookie()` rather than the `HTTPResponse` object — so it
+   doesn't actually block ISR's cache. If you ever route Fluent's cookie via
+   `$response->addHeader('Set-Cookie', …)` directly, ISR's
+   `strippable_set_cookies` config (default `[FluentLocale, FluentLocale_CMS]`)
+   keeps it out of the cached entry:
+
+   ```yaml
+   Atwx\ISR\Middleware\ISRMiddleware:
+     strippable_set_cookies:
+       - FluentLocale
+       - FluentLocale_CMS
+       - YourOwnSafeCookie
+   ```
+
+   Set-Cookie headers carrying *any* cookie name not in this whitelist still
+   block caching for that response (correct behaviour for session cookies).
+
+The cached response on a HIT will not carry `Set-Cookie: FluentLocale=…`, but
+Fluent re-detects the locale on every request anyway, so the persistence
+cookie isn't load-bearing for correctness.
+
 ## Vary header support
 
 If a response declares `Vary: Accept-Language` (or any list of headers), each variant gets
