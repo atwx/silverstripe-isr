@@ -7,9 +7,11 @@ namespace Atwx\ISR\Middleware;
 use Atwx\ISR\Cache\ISRCache;
 use Atwx\ISR\Cache\ISRCacheEntry;
 use Atwx\ISR\Cache\ISRCounters;
+use Atwx\ISR\Cache\VaryMarker;
 use Atwx\ISR\Job\ISRRevalidateJob;
 use Atwx\ISR\Strategy\CacheKeyResolver;
 use Atwx\ISR\Strategy\TagCollector;
+use Atwx\ISR\Strategy\VaryKey;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use SilverStripe\Control\Director;
@@ -87,12 +89,22 @@ class ISRMiddleware implements HTTPMiddleware
             return $delegate($request);
         }
 
-        $key = $this->keyResolver->keyFor($request);
+        $baseKey = $this->keyResolver->keyFor($request);
         $now = time();
         $isInternal = $request->getHeader('X-ISR-Internal') === '1';
+        $entry = null;
+        $storeKey = $baseKey;
 
         if (!$isInternal) {
-            $entry = $this->cache->get($key);
+            $found = $this->cache->get($baseKey);
+            if ($found instanceof VaryMarker) {
+                $storeKey = VaryKey::expand($baseKey, $found->headers, $request);
+                $variant = $this->cache->get($storeKey);
+                $entry = $variant instanceof ISRCacheEntry ? $variant : null;
+            } elseif ($found instanceof ISRCacheEntry) {
+                $entry = $found;
+            }
+
             if ($entry !== null && !$entry->isExpired((int)static::config()->get('hard_max_age'), $now)) {
                 if (!$entry->isStale($now)) {
                     $this->counters?->increment('HIT');
@@ -101,7 +113,7 @@ class ISRMiddleware implements HTTPMiddleware
 
                 $graceLimit = $entry->createdAt + $entry->ttl + (int)static::config()->get('stale_grace');
                 if ($now <= $graceLimit) {
-                    $this->scheduleRevalidate($request, $key);
+                    $this->scheduleRevalidate($request, $storeKey);
                     $this->counters?->increment('STALE');
                     return $this->respondFromCache($entry, 'STALE', $now);
                 }
@@ -111,7 +123,7 @@ class ISRMiddleware implements HTTPMiddleware
         self::resetTagCollector();
         $response = $delegate($request);
         if ($response instanceof HTTPResponse) {
-            $this->storeIfCacheable($request, $response, $key);
+            $this->storeIfCacheable($request, $response, $baseKey);
             $state = $isInternal ? 'REVALIDATE' : 'MISS';
             $response->addHeader('X-ISR-Cache', $state);
             $this->counters?->increment($state);
@@ -175,13 +187,18 @@ class ISRMiddleware implements HTTPMiddleware
         return true;
     }
 
-    private function storeIfCacheable(HTTPRequest $request, HTTPResponse $response, string $key): void
+    private function storeIfCacheable(HTTPRequest $request, HTTPResponse $response, string $baseKey): void
     {
         if (!$this->isCacheableResponse($response)) {
             return;
         }
         $ttl = $this->resolveTTL($request, $response);
         if ($ttl < 0) {
+            return;
+        }
+        $vary = VaryKey::normalize((string)$response->getHeader('Vary'));
+        if ($vary === ['*']) {
+            // Vary: * is the explicit "do not share across requests" directive — never cache.
             return;
         }
         $tags = array_values(array_unique(array_merge(
@@ -196,7 +213,14 @@ class ISRMiddleware implements HTTPMiddleware
             ttl: $ttl,
             tags: $tags,
         );
-        $this->cache->set($key, $entry, $tags);
+
+        if ($vary !== []) {
+            $variantKey = VaryKey::expand($baseKey, $vary, $request);
+            $this->cache->set($variantKey, $entry, $tags);
+            $this->cache->set($baseKey, new VaryMarker($vary, time(), $ttl), $tags);
+        } else {
+            $this->cache->set($baseKey, $entry, $tags);
+        }
     }
 
     private function resolveTTL(HTTPRequest $request, HTTPResponse $response): int

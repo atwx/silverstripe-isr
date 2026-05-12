@@ -24,25 +24,26 @@ class ISRCache
         }
     }
 
-    public function get(string $key): ?ISRCacheEntry
+    public function get(string $key): ISRCacheEntry|VaryMarker|null
     {
         $item = $this->backend->getItem($this->sanitize($key));
         if (!$item->isHit()) {
             return null;
         }
         $value = $item->get();
-        return $value instanceof ISRCacheEntry ? $value : null;
+        return $value instanceof ISRCacheEntry || $value instanceof VaryMarker ? $value : null;
     }
 
-    public function set(string $key, ISRCacheEntry $entry, array $tags = []): void
+    public function set(string $key, ISRCacheEntry|VaryMarker $value, array $tags = []): void
     {
         $item = $this->backend->getItem($this->sanitize($key));
-        $item->set($entry);
-        $allTags = array_values(array_unique(array_merge($entry->tags, $tags)));
+        $item->set($value);
+        $entryTags = $value instanceof ISRCacheEntry ? $value->tags : [];
+        $allTags = array_values(array_unique(array_merge($entryTags, $tags)));
         if ($allTags !== []) {
             $item->tag(array_map([$this, 'sanitize'], $allTags));
         }
-        $hardMax = (int)($entry->ttl + 86400 * 7);
+        $hardMax = (int)($value->ttl + 86400 * 7);
         $item->expiresAfter($hardMax > 0 ? $hardMax : null);
         $this->backend->save($item);
     }
