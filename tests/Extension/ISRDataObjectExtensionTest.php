@@ -8,9 +8,10 @@ use Atwx\ISR\Cache\ISRCache;
 use Atwx\ISR\Cache\ISRCacheEntry;
 use Atwx\ISR\Extension\ISRDataObjectExtension;
 use Atwx\ISR\Middleware\ISRMiddleware;
-use SilverStripe\Core\Config\Config_ForClass;
+use SilverStripe\Core\Config\Config;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\Dev\SapphireTest;
+use SilverStripe\Dev\TestOnly;
 use SilverStripe\ORM\DataObject;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Cache\Adapter\TagAwareAdapter;
@@ -25,13 +26,13 @@ class ISRDataObjectExtensionTest extends SapphireTest
         $this->cache = new ISRCache(new TagAwareAdapter(new ArrayAdapter(), new ArrayAdapter()));
         Injector::inst()->registerService($this->cache, ISRCache::class);
         ISRMiddleware::resetTagCollector();
+        Config::modify()->set(FakeISRTestOwner::class, 'isr_tag_prefix', 'news');
     }
 
-    private function makeOwner(int $id, ?string $prefix = 'news'): FakeISRTestOwner
+    private function makeOwner(int $id): FakeISRTestOwner
     {
         $owner = new FakeISRTestOwner();
         $owner->ID = $id;
-        $owner->isrPrefix = $prefix;
         return $owner;
     }
 
@@ -97,9 +98,18 @@ class ISRDataObjectExtensionTest extends SapphireTest
 
     public function testCustomPrefixIsUsed(): void
     {
-        $ext = $this->bindExtension($this->makeOwner(3, 'article'));
+        Config::modify()->set(FakeISRTestOwner::class, 'isr_tag_prefix', 'article');
+        $ext = $this->bindExtension($this->makeOwner(3));
         $ext->addISRTag();
         $this->assertContains('article-3', ISRMiddleware::tagCollector()->all());
+    }
+
+    public function testFallbackPrefixIsShortClassName(): void
+    {
+        Config::modify()->set(FakeISRTestOwner::class, 'isr_tag_prefix', null);
+        $ext = $this->bindExtension($this->makeOwner(5));
+        $ext->addISRTag();
+        $this->assertContains('fakeisrtestowner-5', ISRMiddleware::tagCollector()->all());
     }
 
     public function testIdZeroDoesNothing(): void
@@ -111,27 +121,9 @@ class ISRDataObjectExtensionTest extends SapphireTest
 }
 
 /**
- * Lightweight DataObject stand-in for testing ISRDataObjectExtension without a database.
- * Overrides config() to return a configurable isr_tag_prefix.
+ * Minimal DataObject used by tests above. Not persisted to a database.
  */
-class FakeISRTestOwner extends DataObject
+class FakeISRTestOwner extends DataObject implements TestOnly
 {
-    public ?string $isrPrefix = 'news';
-
-    public function config(): Config_ForClass
-    {
-        $prefix = $this->isrPrefix;
-        return new class($prefix) extends Config_ForClass {
-            public function __construct(private readonly ?string $prefix)
-            {
-            }
-            public function get($name, $options = 0)
-            {
-                if ($name === 'isr_tag_prefix') {
-                    return $this->prefix;
-                }
-                return null;
-            }
-        };
-    }
+    private static string $table_name = 'ISRTest_FakeISRTestOwner';
 }
