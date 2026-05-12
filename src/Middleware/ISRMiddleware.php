@@ -187,17 +187,13 @@ class ISRMiddleware implements HTTPMiddleware
 
     private function resolveTTL(HTTPRequest $request, HTTPResponse $response): int
     {
-        $default = (int)static::config()->get('default_ttl');
-        $pageTtl = $request->getSession() ? null : null;
-        $controller = method_exists($response, 'getController') ? null : null;
-
         $hint = $response->getHeader('X-ISR-TTL');
         if ($hint !== null && $hint !== '') {
             $value = (int)$hint;
             $response->removeHeader('X-ISR-TTL');
             return $value;
         }
-        return $default;
+        return (int)static::config()->get('default_ttl');
     }
 
     private function collectHeaders(HTTPResponse $response): array
